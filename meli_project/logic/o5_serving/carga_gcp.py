@@ -16,6 +16,7 @@ class CargadorBigQuery:
         self.logger = setup_logger('o5_serving_logs/carga_bigquery.log')
 
         # Inicializar credenciales
+
         self.credentials = service_account.Credentials.from_service_account_file(GOOGLE_APPLICATION_CREDENTIALS)
         self.project_id = project_id
         self.dataset = dataset
@@ -27,7 +28,9 @@ class CargadorBigQuery:
 
 
 
+
     def cargar_archivo(self, nombre_archivo):
+
 
         """
         Carga un archivo .parquet específico a BigQuery.
@@ -82,7 +85,7 @@ class CargadorBigQuery:
 
             self.logger.critical("⚠️ No se encontraron archivos .parquet en GOLD.")
 
-            return #⚠️ No se encontraron archivos .parquet en GOLD."
+            return "⚠️ No se encontraron archivos .parquet en GOLD."
 
 
         for archivo in archivos:

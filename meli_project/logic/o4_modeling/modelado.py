@@ -1,202 +1,118 @@
 import os
+import shutil
 import pandas as pd
 from meli_project.logic.utils.utils import *
 
 
 
+class CurrencyModeler:
 
-class ModeladorWB:
+    def __init__(self, nombre_parquet="currencies_transformadas.parquet"):
 
-    """
-    Clase encargada de construir el modelo dimensional a partir de los DataFrames
-    procesados en la capa silver. Crea y guarda las tablas de hechos y dimensiones en gold.
-    """
+        """
+        Clase que gestiona el modelado de datos:
+        - Copia el archivo .parquet desde Silver a Gold
+        - Convierte el archivo .parquet a .csv y lo guarda en Gold
+        """
 
-
-    def __init__(self):
+        self.nombre_parquet = nombre_parquet
 
         self.silver_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../../../data/o2_silver")
         )
+
         self.gold_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../../../data/o3_gold")
         )
+
         os.makedirs(self.gold_path, exist_ok=True)
 
 
 
-    def cargar_todos_df_silver(self):
+    def copiar_parquet_a_gold(self):
+
         """
-        Carga todos los archivos .parquet de la capa silver en un solo DataFrame unificado.
+        Copia el archivo .parquet desde Silver a Gold sin modificarlo.
         """
 
-        df_list = []
+        logger = setup_logger("o4_modeling_logs/copiar_parquet_a_gold.log")
 
-        if not os.path.exists(self.silver_path):
-            print("❌ Carpeta silver no encontrada.")
-            return pd.DataFrame()
+        logger.info("INICIO copia del archivo Parquet desde Silver a Gold...")
 
 
-        for file in os.listdir(self.silver_path):
+        source_path = os.path.join(self.silver_path, self.nombre_parquet)
+        target_path = os.path.join(self.gold_path, self.nombre_parquet)
 
-            if file.endswith(".parquet"):
-
-                try:
-                    df_path = os.path.join(self.silver_path, file)
-                    df = pd.read_parquet(df_path)
-                    df_list.append(df)
-
-                except Exception as e:
-
-                    continue
-
-
-        if not df_list:
-            return "⚠️ No se pudieron cargar archivos .parquet desde silver."
-
-        return pd.concat(df_list, ignore_index=True)
-
-
-
-    def crear_tabla_dim_time(self, df):
-
-        d_time = df[["TIME_PERIOD"]].drop_duplicates().sort_values("TIME_PERIOD")
-
-        d_time["time_id"] = range(1, len(d_time) + 1)
-
-        return d_time[["time_id", "TIME_PERIOD"]]
-
-
-
-
-    def crear_tabla_dim_area(self, df):
-
-        d_area = df[["REF_AREA"]].drop_duplicates().sort_values("REF_AREA")
-
-        d_area["area_id"] = range(1, len(d_area) + 1)
-
-        return d_area[["area_id", "REF_AREA"]]
-
-
-
-
-
-    def crear_tabla_dim_indicadores(self, df):
-
-        d_ind = df[["INDICATOR", "INDICATOR_NAME", "CATEGORY"]].drop_duplicates().reset_index(drop=True)
-
-        # Crear ID numérico para cada indicador
-        d_ind["indicator_id"] = range(1, len(d_ind) + 1)
-
-        # Crear una etiqueta legible
-        d_ind["indicator_label"] = d_ind["INDICATOR"].map(
-            lambda x: diccionario_indicadores_info.get(x, {}).get("indicator_label")
-        )
-
-        d_ind["indicator_description"] = d_ind["INDICATOR"].map(
-            lambda x: diccionario_indicadores_info.get(x, {}).get("indicator_description")
-        )
-
-        return d_ind[["indicator_id", "INDICATOR", "INDICATOR_NAME", "CATEGORY", "indicator_label", "indicator_description"]]
-
-
-
-
-    def crear_tabla_hechos(self, df, d_time, d_area, d_indicadores):
-
-        f = df[["OBS_VALUE", "TIME_PERIOD", "REF_AREA", "INDICATOR"]].copy()
-
-        f = f.merge(d_time, on="TIME_PERIOD", how="left")
-
-        f = f.merge(d_area, on="REF_AREA", how="left")
-
-        f = f.merge(d_indicadores, on="INDICATOR", how="left")
-
-
-        return f[["time_id", "area_id", "indicator_id", "OBS_VALUE"]]
-
-
-
-
-    def guardar_en_gold(self, nombre, df):
-
-        path = os.path.join(self.gold_path, f"{nombre}.parquet")
 
         try:
 
-            df.to_parquet(path, index=False)
+            if not os.path.isfile(source_path):
 
-            return f"✅ Guardado {nombre} en: {path}"
+                logger.error(f"❌ Archivo no encontrado: {source_path}")
+
+                return f"❌ Archivo no encontrado: {source_path}"
+
+
+            shutil.copyfile(source_path, target_path)
+
+            logger.info(f"✅ Archivo copiado correctamente a: {target_path}")
 
         except Exception as e:
 
-            return f"❌ Error al guardar {nombre}: {e}"
+            logger.error(f"❌ Error al copiar el archivo Parquet: {e}")
 
 
 
-
-    def ejecutar_pipeline_gold_dimensional(self):
+    def convertir_a_csv(self):
 
         """
-        Ejecuta el pipeline dimensional completo: unifica todos los .parquet de silver,
-        genera las tablas dimensionales y de hechos, y las guarda en gold.
+        Carga el archivo .parquet desde Silver, lo convierte a .csv y lo guarda en Gold.
         """
 
-        logger = setup_logger("o4_modeling_logs/pipeline_gold_dimensional.log")
+        logger = setup_logger("o4_modeling_logs/convertir_a_csv.log")
 
+        logger.info("INICIO conversión Parquet → CSV...")
 
-        logger.info("INICIO PIPELINE para construir el modelo dimensional desde silver.")
+        parquet_file = os.path.join(self.silver_path, self.nombre_parquet)
 
-
-        df_master = self.cargar_todos_df_silver()
-
-
-        if not isinstance(df_master,pd.DataFrame) or df_master.empty:
-
-            logger.error("FIN del pipeline. ❌ No se pudo generar el modelo dimensional por falta de datos.")
-
-            return "❌ No se pudo generar el modelo dimensional por falta de datos."
-
-
-        # Crear dimensiones y tabla de hechos
         try:
-            d_time = self.crear_tabla_dim_time(df_master)
-            logger.info(f"✅ Tabla 'd_time' creada con {len(d_time)} registros.")
 
-            d_area = self.crear_tabla_dim_area(df_master)
-            logger.info(f"✅ Tabla 'd_area' creada con {len(d_area)} registros.")
+            if not os.path.isfile(parquet_file):
 
-            d_indicadores = self.crear_tabla_dim_indicadores(df_master)
-            logger.info(f"✅ Tabla 'd_indicadores' creada con {len(d_indicadores)} registros.")
+                logger.error(f"❌ Archivo no encontrado: {parquet_file}")
 
-            f_valores = self.crear_tabla_hechos(df_master, d_time, d_area, d_indicadores)
-            logger.info(f"✅ Tabla de hechos 'f_valores' creada con {len(f_valores)} registros.")
+                return f"❌ Archivo no encontrado: {parquet_file}"
 
+            df = pd.read_parquet(parquet_file)
+
+            csv_name = self.nombre_parquet.replace(".parquet", ".csv")
+
+            csv_path = os.path.join(self.gold_path, csv_name)
+
+            df.to_csv(csv_path, index=False, encoding="utf-8-sig", sep=";")
+
+            logger.info(f"✅ CSV generado correctamente en: {csv_path}")
 
         except Exception as e:
-            logger.error(f"FIN pipeline. ❌ Error durante la creación de las tablas: {e}")
-            return f"❌ Error durante el procesamiento: {e}"
+
+            logger.error(f"❌ Error al convertir a CSV: {e}")
 
 
 
-        # Guardar todas las tablas
-        tablas = {
-            "dim_time_period": d_time,
-            "dim_ref_area": d_area,
-            "dim_indicadores": d_indicadores,
-            "fact_obs_values": f_valores
-        }
+    def procesar_modelado_completo(self):
 
+        """
+        Ejecuta toda la etapa de modelado:
+        - Copia el archivo .parquet a Gold
+        - Genera el archivo .csv en Gold
+        """
 
-        for nombre, df in tablas.items():
-            resultado = self.guardar_en_gold(nombre, df)
+        logger = setup_logger("o4_modeling_logs/procesar_modelado_completo.log")
 
-            if "✅" in resultado:
-                logger.info(resultado)
-            else:
-                logger.error(resultado)
+        logger.info("INICIO del proceso completo de modelado...")
 
+        self.copiar_parquet_a_gold()
 
-        logger.info("FIN PIPELINE. 🎯 Modelo dimensional generado y guardado correctamente.")
+        self.convertir_a_csv()
 
-        return "✅ Modelo dimensional generado y guardado correctamente."
+        logger.info("FIN del proceso de modelado.")

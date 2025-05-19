@@ -1,113 +1,98 @@
-from meli_project.logic.o1_extraction.api_wb import DataWB
-from meli_project.logic.o2_cleaning.clean_json import DFsWB
-from meli_project.logic.o3_transformation.transformaciones import TransformadorWB
-from meli_project.logic.o4_modeling.modelado import ModeladorWB
+from meli_project.logic.o1_extraction.api_wb import CurrencyExtractor
+from meli_project.logic.o2_cleaning.clean_json import DFsCurrencies
+from meli_project.logic.o3_transformation.transformaciones import CurrencyTransformer
+from meli_project.logic.o4_modeling.modelado import CurrencyModeler
 from meli_project.logic.o5_serving.carga_gcp import CargadorBigQuery
 from meli_project.logic.utils.utils import *
 
 
 
-
 def main():
 
+
     """
-    ETL completo
+    Pipeline ETL completo para normalizar cotizaciones de monedas extranjeras,
+    exportarlas a CSV y Parquet, y subirlas a BigQuery.
     """
 
-    logger = setup_logger('o6_main_logs/main.log')
+    logger = setup_logger('o6_main_logs/main_etl.log')
 
-    logger.info("INICIO PIPELINE ETL completo.")
-
-
+    logger.info("🚀 INICIO PIPELINE ETL - Cotizaciones de Monedas")
 
 
     try:
+        logger.info("📥 Extracción de datos desde AwesomeAPI...")
 
-        logger.info("📥 Extracción de datos para ARG...")
+        extractor = CurrencyExtractor()
 
-        wb_arg = DataWB()
-        resultado_arg = wb_arg.obtener_all_data()
-        logger.info(f"✅ Resultado ARG: {resultado_arg}")
+        resultado = extractor.obtener_todos_los_datos()
+
+        logger.info(f"✅ Resultado extracción: {resultado}")
 
     except Exception as e:
 
-        logger.error(f"❌ Error en la extracción de ARG: {e}")
-
-
-
+        logger.error(f"❌ Error en extracción de monedas: {e}")
 
     try:
 
-        logger.info("🌍 Extracción de datos para WLD...")
+        logger.info("Limpieza y unión de JSONs...")
 
-        wb_wld = DataWB(ref_area="WLD")
+        cleaner = DFsCurrencies()
 
-        indicadores_validos_wld = cargar_indicadores_validos_arg()
-        resultado_wld = wb_wld.obtener_all_data(indicadores_validos_wld)
+        df_unificado = cleaner.obtener_df_unificado()
 
-        logger.info(f"✅ Resultado WLD: {resultado_wld}")
+        logger.info(f"✅ DF unificado generado. Registros: {len(df_unificado)}")
 
     except Exception as e:
-        logger.error(f"❌ Error en la extracción de WLD: {e}")
 
+        logger.error(f"❌ Error en limpieza/unificación: {e}")
 
+        df_unificado = None
 
+    if df_unificado is not None:
+
+        try:
+
+            logger.info("⚙️ Transformación de datos y guardado en Silver (.parquet)...")
+            transformador = CurrencyTransformer(df_unificado)
+
+            transformador.guardar_en_parquet()
+            logger.info("✅ Transformación completada y guardada.")
+
+        except Exception as e:
+
+            logger.error(f"❌ Error en transformación de datos: {e}")
 
     try:
-        logger.info("🧼 Iniciando limpieza y conversión a DataFrames...")
-        limpiador = DFsWB()
-        dfs_dict = limpiador.obtener_todos_df()
-        logger.info(f"✅ Se obtuvieron {len(dfs_dict)} DataFrames válidos.")
+
+        logger.info("📦 Modelado: copia a GOLD y exportación a CSV...")
+
+
+        modelador = CurrencyModeler()
+
+        modelador.procesar_modelado_completo()
+
+        logger.info("✅ Archivo Parquet copiado y CSV generado en GOLD.")
 
     except Exception as e:
-        logger.error(f"❌ Error en limpieza de datos: {e}")
 
-
-
-
-    try:
-        logger.info("⚙️ Iniciando transformación...")
-        transformador = TransformadorWB(dfs_dict)
-        transformador.transformar_todos()
-        logger.info("✅ Transformación completada.")
-
-    except Exception as e:
-        logger.error(f"❌ Error en transformación: {e}")
-
-
+        logger.error(f"❌ Error en modelado/exportación a GOLD: {e}")
 
 
     try:
-        logger.info("📦 Construyendo modelo dimensional (capa GOLD)...")
-        modelador = ModeladorWB()
-        modelador.ejecutar_pipeline_gold_dimensional()
-        logger.info("✅ Tablas del modelo dimensional generadas y guardadas en GOLD.")
 
-    except Exception as e:
-        logger.error(f"❌ Error en modelado GOLD: {e}")
+        logger.info("☁️ Carga del archivo Parquet a Google BigQuery...")
 
-
-
-
-    try:
-        logger.info("☁️ Iniciando carga en BigQuery...")
         cargador = CargadorBigQuery()
+
         cargador.cargar_todas_tablas_gold()
-        logger.info("✅ Todas las tablas de GOLD subidas a BigQuery.")
+        logger.info("✅ Datos cargados correctamente a BigQuery.")
 
     except Exception as e:
+
         logger.error(f"❌ Error al subir a BigQuery: {e}")
 
-    try:
-        convertir_parquet_a_csv()
-        logger.info("✅ DF de gold convertidos a CSV con exito.")
-
-    except Exception as e:
-        logger.error(f"❌ Error al convertir los df a CSV: {e}")
-
-
-
-    logger.info("FIN PIPELINE ETL finalizado.")
+    logger.info("🏁 FIN PIPELINE ETL finalizado correctamente.")
 
 
 if __name__ == "__main__":
